@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal de Governança Exed</title>
+    <script>
+      // Preserva o acesso em ambiente containerizado (Cloud Run) salvando o token no sessionStorage
+      (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        if (token) {
+          sessionStorage.setItem('exed_session_token', token);
+        } else {
+          const storedToken = sessionStorage.getItem('exed_session_token');
+          if (storedToken) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('token', storedToken);
+            window.location.replace(url.toString());
+          }
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
