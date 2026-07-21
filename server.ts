@@ -6,8 +6,8 @@ import fs from 'fs';
 // It is only used in local development (see dynamic import below) and must
 // never be bundled into the Vercel serverless function, since it can crash
 // the function at cold start and break every API route (including login).
-import { SEED_CUSTOMERS, SEED_PROJECTS } from './src/data/seedData';
-import { SEED_QA_CRITERIA, SEED_QA_REVIEWS, SEED_RSE_RECORDS } from './src/data/qaSeedData';
+import { SEED_CUSTOMERS, SEED_PROJECTS } from './src/data/seedData.js';
+import { SEED_QA_CRITERIA, SEED_QA_REVIEWS, SEED_RSE_RECORDS } from './src/data/qaSeedData.js';
 
 const app = express();
 const PORT = 3000;
