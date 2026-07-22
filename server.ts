@@ -12,10 +12,6 @@ import { SEED_QA_CRITERIA, SEED_QA_REVIEWS, SEED_RSE_RECORDS } from './src/data/
 const app = express();
 const PORT = 3000;
 
-const KEYS_FILE = process.env.NODE_ENV === 'production'
-  ? path.join('/tmp', 'api-keys.json')
-  : path.join(process.cwd(), 'src', 'data', 'api-keys.json');
-
 // Server-side audit logging helper
 async function serverAddLog(user: string, action: string, details: string) {
   try {
@@ -1045,23 +1041,16 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
     }
   });
 
-  // API Keys Helpers
-  const readKeys = (): any[] => {
+  // API Keys Helpers (Firestore-backed — a local file would be ephemeral on Vercel serverless)
+  const readKeys = async (): Promise<any[]> => {
     try {
-      if (fs.existsSync(KEYS_FILE)) {
-        return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8'));
-      }
+      const snap = await firestoreDbInstance.collection('apiKeys').get();
+      const keys: any[] = [];
+      snap.forEach((doc: any) => keys.push(doc.data()));
+      return keys;
     } catch (e) {
-      console.error('Error reading keys file:', e);
-    }
-    return [];
-  };
-
-  const writeKeys = (keys: any[]) => {
-    try {
-      fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('Error writing keys file:', e);
+      console.error('Error reading API keys:', e);
+      return [];
     }
   };
 
@@ -1072,7 +1061,7 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
       return res.status(403).json({ error: 'Acesso negado. Apenas administradores do PMO podem listar chaves de API.' });
     }
 
-    const keys = readKeys();
+    const keys = await readKeys();
     res.json(keys);
   });
 
@@ -1086,19 +1075,21 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
     if (!label) {
       return res.status(400).json({ error: 'Label é obrigatório' });
     }
-    
-    const keys = readKeys();
-    const token = 'exed_pub_' + crypto.randomBytes(24).toString('hex');
+
     const newKey = {
       id: 'key-' + Date.now(),
       label,
-      key: token,
+      key: 'exed_pub_' + crypto.randomBytes(24).toString('hex'),
       createdAt: new Date().toISOString()
     };
-    
-    keys.push(newKey);
-    writeKeys(keys);
-    res.json(newKey);
+
+    try {
+      await firestoreDbInstance.collection('apiKeys').doc(newKey.id).set(newKey);
+      res.json(newKey);
+    } catch (e) {
+      console.error('Error creating API key:', e);
+      res.status(500).json({ error: 'Erro ao gerar chave de API' });
+    }
   });
 
   app.delete('/api/admin/api-keys/:id', async (req, res) => {
@@ -1108,10 +1099,13 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
     }
 
     const { id } = req.params;
-    let keys = readKeys();
-    keys = keys.filter(k => k.id !== id);
-    writeKeys(keys);
-    res.json({ success: true });
+    try {
+      await firestoreDbInstance.collection('apiKeys').doc(id).delete();
+      res.json({ success: true });
+    } catch (e) {
+      console.error('Error revoking API key:', e);
+      res.status(500).json({ error: 'Erro ao revogar chave de API' });
+    }
   });
   app.get('/api/db/load', async (req, res) => {
     try {
@@ -1120,7 +1114,20 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
         const { password, salt, ...rest } = u;
         return rest;
       });
-      res.json({ ...db, users: safeUsers });
+      res.json({
+        users: safeUsers,
+        customers: db.customers,
+        projects: db.projects,
+        criteria: db.criteria,
+        reviews: db.reviews,
+        rseRecords: db.rseRecords,
+        logs: db.logs,
+        notifications: db.notifications,
+        gps: db.gps,
+        settings: db.settings
+        // NOTE: db.sessions is intentionally excluded — it contains live session
+        // tokens for every logged-in user. Never spread the raw `db` object here.
+      });
     } catch (err: any) {
       console.error('Load DB error:', err);
       res.status(500).json({ error: 'Erro ao carregar banco de dados' });
@@ -1514,7 +1521,7 @@ Não inclua nenhuma introdução, marcações de código markdown ou explicaçõ
       });
     }
 
-    const keys = readKeys();
+    const keys = await readKeys();
     const validKey = keys.find(k => k.key === token);
 
     if (!validKey) {

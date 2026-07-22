@@ -314,8 +314,14 @@ export default function App() {
             }
           });
         } else if (response.status === 401) {
-          // Reset session if token is invalid or expired on the server
-          setLoggedUser(null);
+          // NOTE: We intentionally do NOT force-logout the user here.
+          // This is a background sync call — a transient 401 (e.g. a cold-start
+          // race right after login) must not silently kill the whole session,
+          // especially while the first-login "set new password" screen is open.
+          // Real, persistent session issues will surface clearly the next time
+          // the user takes an explicit action (each handler already shows a
+          // proper error message and lets them retry or log in again).
+          console.warn('Database sync returned 401 — session may be stale. Will retry on next explicit action.');
         }
       } catch (err) {
         console.error('Failed to load database from server:', err);
